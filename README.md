@@ -25,20 +25,22 @@ Zwei n8n-Workflows, verbunden über eine gemeinsame Notion-Datenbankstruktur:
 
 **1. Learn Create** *(zeitgesteuert)*
 
-//Schedule Trigger → Lernmaterial + Verlauf aus Notion laden
+​```
+Schedule Trigger → Lernmaterial + Verlauf aus Notion laden
 → SM-2-Auswahl (fällige Wiederholungen + adaptive Auffüllung)
 → GPT-4o-mini generiert Quizfragen (Duplikatsprüfung inklusive)
-→ Versand per Telegram → Speicherung in Notion//
+→ Versand per Telegram → Speicherung in Notion
+​```
 
 **2. Learn Answer** *(Telegram-getriggert)*
 
-//
+​```
 Telegram Reply → Zuordnung zur offenen Frage
 → GPT-4o-mini bewertet die Antwort inhaltlich
 → SM-2-Neuberechnung (Ease-Factor, Intervall, nächstes Fälligkeitsdatum)
 → Statistik-Update (Trefferquote, Streak)
 → Feedback mit Erklärung per Telegram
-//
+​```
 
 **Notion-Datenbanken:** `Lernmaterial` · `Active_Questions` · `Question_History` · `User_Stats`
 
