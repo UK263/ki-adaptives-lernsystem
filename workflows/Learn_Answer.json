@@ -1,0 +1,696 @@
+{
+  "name": "Final Learn Answer",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2368,
+        112
+      ],
+      "id": "68ad2ad7-2565-4d74-9fb8-1629aaa36b26",
+      "name": "Telegram Trigger",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "DATABASE_ID_ACTIVE_QUESTIONS",
+          "mode": "list",
+          "cachedResultName": "Active_Questions",
+          "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -2128,
+        112
+      ],
+      "id": "35e6409f-3af1-4147-809f-05652802d581",
+      "name": "Get Active_Questions",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// SCHRITT 1: Match Telegram-Reply zu Active_Question\nconst trigger = $('Telegram Trigger').first().json;\nconst msg = trigger.message || trigger;\nconst userText = (msg.text || '').trim();\nconst replyTo = msg.reply_to_message?.message_id;\n\nif (!replyTo) {\n  return [{ json: { error: true, error_message: '❌ Bitte antworte direkt auf eine Quiz-Frage.' }}];\n}\n\nconst replyId = replyTo.toString();\nconst activeItems = $('Get Active_Questions').all();\n\nfor (const item of activeItems) {\n  const mid = (item.json.property_telegram_message_id || '').toString().trim();\n  if (!mid || mid !== replyId) continue;\n\n  return [{ json: {\n    error: false,\n    user_answer: userText,\n    answered_at: new Date().toISOString(),\n    chat_id: (msg.chat?.id || 'YOUR_TELEGRAM_CHAT_ID').toString(),\n    question_text: item.json.name || '',\n    notion_page_id: item.json.id || '',\n    question_id: item.json.property_question_id || '',\n    correct_answer: item.json.property_correct_answer || '',\n    explanation: item.json.property_explanation || '',\n    subject: item.json.property_subject || '',\n    difficulty: item.json.property_difficulty || '',\n    options: item.json.property_options || '',\n    page_id: item.json.property_page_id || ''\n  }}];\n}\n\nreturn [{ json: { error: true, error_message: '❌ Frage nicht gefunden. Starte ein neues Quiz!' }}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1888,
+        112
+      ],
+      "id": "b5366ee4-b6b3-47e3-8f46-f8727ac83505",
+      "name": "Match Frage"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1648,
+        112
+      ],
+      "id": "f39e725c-36f8-40c5-ab53-e3385623bd21",
+      "name": "Frage gefunden?"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $('Match Frage').first().json.error_message }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -1408,
+        272
+      ],
+      "id": "312c1e5f-e590-4b3c-b621-8a06a2bf21a9",
+      "name": "Error Feedback",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Du bist ein IT-Ausbilder. Bewerte Antworten. Antworte NUR mit JSON, kein Markdown, kein Text davor/danach.",
+              "role": "system"
+            },
+            {
+              "content": "=Bewerte diese Antwort:\n\nFrage: {{ $json.question_text }}\nOptionen: {{ $json.options }}\nUser-Antwort: {{ $json.user_answer }}\nRichtige Antwort: {{ $json.correct_answer }}\nErklärung: {{ $json.explanation }}\n\nAntwort als JSON:\n{\"is_correct\":true,\"user_answer\":\"gewählte Option\",\"correct_answer\":\"richtige Option\",\"question_text\":\"die Frage\",\"explanation\":\"2-3 Sätze Erklärung\",\"example\":\"Praxisbeispiel\",\"quality\":4}\n\nquality: 5=perfekt 4=richtig 3=knapp 2=falsch+klar 1=falsch+unklar 0=falsch\nis_correct=true wenn User-Zahl zur richtigen Option passt."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 500,
+          "temperature": 0.3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -1408,
+        112
+      ],
+      "id": "3271a1d4-fe9e-4f82-af45-e7b74d1482af",
+      "name": "GPT Bewertung",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "DATABASE_ID_QUESTION_HISTORY",
+          "mode": "list",
+          "cachedResultName": "Question_History",
+          "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -1168,
+        112
+      ],
+      "id": "b43e2ba6-99e9-47fd-9789-648f4dea5ef0",
+      "name": "Get Question History",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// KERN-NODE: GPT parsen + History finden + SM-2 berechnen\n// Liest von: GPT Bewertung, Match Frage, Get Question History\n\n// 1. GPT Output parsen\nconst gptNode = $('GPT Bewertung').first().json;\nconst gptRaw = gptNode.message?.content || gptNode.text || '';\nconst cleaned = gptRaw.replace(/```json\\s*/gi, '').replace(/```\\s*/g, '').trim();\nlet gpt = {};\ntry { gpt = JSON.parse(cleaned); }\ncatch(e) {\n  // Fallback: versuche Teilstring zu parsen\n  const jsonMatch = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    try { gpt = JSON.parse(jsonMatch[0]); } catch(e2) {}\n  }\n  if (!gpt.is_correct && gpt.is_correct !== false) {\n    throw new Error('GPT Parse Error: ' + e.message + ' | Output: ' + cleaned.substring(0, 200));\n  }\n}\n\n// 2. Match-Daten\nconst match = $('Match Frage').first().json;\nconst isCorrect = gpt.is_correct === true;\nconst quality = parseInt(gpt.quality) || (isCorrect ? 4 : 1);\n\n// 3. History per page_id suchen\nlet historyId = '';\nlet h = null;\ntry {\n  const historyItems = $('Get Question History').all();\n  for (const item of historyItems) {\n    const pid = (item.json.property_page_id || item.json.page_id || '').toString().trim();\n    if (pid && pid === match.page_id) {\n      historyId = item.json.id;\n      h = item.json;\n      break;\n    }\n  }\n} catch(e) {\n  // History nicht geladen? Kein Problem, erstellen wir neu\n}\n\n// Helper\nfunction gp(obj, name) {\n  if (!obj) return null;\n  const v1 = obj['property_' + name];\n  if (v1 != null && v1 !== '') return v1;\n  const v2 = obj[name];\n  if (v2 != null && v2 !== '') return v2;\n  return null;\n}\n\n// 4. SM-2 Berechnung\nlet ef = h ? (parseFloat(gp(h, 'ease_factor')) || 2.5) : 2.5;\nlet interval = h ? (parseInt(gp(h, 'interval')) || 0) : 0;\nlet reps = h ? (parseInt(gp(h, 'repetitions')) || 0) : 0;\nlet tc = h ? (parseInt(gp(h, 'times_correct')) || 0) : 0;\nlet ti = h ? (parseInt(gp(h, 'times_incorrect')) || 0) : 0;\n\nif (isCorrect) {\n  tc++; reps++;\n  if (reps === 1) interval = 1;\n  else if (reps === 2) interval = 6;\n  else interval = Math.round(interval * ef);\n} else {\n  ti++; reps = 0; interval = 0;\n}\n\nef = ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));\nif (ef < 1.3) ef = 1.3;\nef = Math.round(ef * 100) / 100;\n\nconst nextDue = new Date();\nnextDue.setDate(nextDue.getDate() + Math.max(interval, 1));\nconst total = tc + ti;\nconst accuracy = total > 0 ? Math.round((tc / total) * 100) : 0;\n\nconst srMsg = isCorrect\n  ? (interval <= 1 ? '📅 Morgen wieder' : '📅 In ' + interval + ' Tagen wieder')\n  : '🔄 Bald wiederholt';\n\nreturn [{ json: {\n  is_correct: isCorrect,\n  user_answer: gpt.user_answer || match.user_answer,\n  correct_answer: gpt.correct_answer || match.correct_answer,\n  question_text: gpt.question_text || match.question_text,\n  explanation: gpt.explanation || match.explanation || '',\n  example: gpt.example || '',\n  sr_message: srMsg,\n  accuracy_percent: accuracy,\n  times_correct: tc,\n  times_incorrect: ti,\n  ease_factor: ef,\n  interval: interval,\n  repetitions: reps,\n  next_due: nextDue.toISOString(),\n  page_id: match.page_id || '',\n  subject: match.subject || '',\n  question_id: match.question_id || '',\n  answered_at: match.answered_at,\n  chat_id: match.chat_id,\n  history_id: historyId,\n  history_exists: historyId !== ''\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -928,
+        112
+      ],
+      "id": "f0a399ea-510b-4cce-a96e-47f27f988382",
+      "name": "SM2 + History"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.is_correct ? '✅ *Richtig!*' : '❌ *Falsch!*' }}\n\n📝 {{ $json.question_text }}\n\nDeine Antwort: {{ $json.user_answer }}\nRichtig: ✅ {{ $json.correct_answer }}\n\n💡 {{ $json.explanation }}\n🔍 {{ $json.example }}\n\n{{ $json.sr_message }}\n📊 {{ $json.accuracy_percent }}%",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -688,
+        112
+      ],
+      "id": "2f0d8e1b-2a55-423e-af96-2822dd117979",
+      "name": "Send Feedback",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "DATABASE_ID_USER_STATS",
+          "mode": "list",
+          "cachedResultName": "User_Stats",
+          "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        48,
+        112
+      ],
+      "id": "7504f7f2-59ec-4c5d-b202-cede23c771f2",
+      "name": "Get User Stats",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sm2 = $('SM2 + History').first().json;\nconst s = $('Get User Stats').all();\nconst sp = s.length > 0 ? s[0].json : {};\n\nconst oldT = parseInt(sp.property_total_answered || sp.total_answered) || 0;\nconst oldC = parseInt(sp.property_total_correct || sp.total_correct) || 0;\nconst oldS = parseInt(sp.property_current_streak || sp.current_streak) || 0;\n\nconst newT = oldT + 1;\nconst newC = sm2.is_correct ? oldC + 1 : oldC;\nconst newS = sm2.is_correct ? oldS + 1 : 0;\nconst newA = newT > 0 ? Math.round((newC / newT) * 100) : 0;\n\nreturn [{ json: {\n  stats_id: s.length > 0 ? s[0].json.id : '',\n  total_answered: newT,\n  total_correct: newC,\n  current_streak: newS,\n  accuracy_percent: newA,\n  last_activity: new Date().toISOString()\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        112
+      ],
+      "id": "83577c49-1e3a-4eca-994d-7fb1fe70ce80",
+      "name": "Berechne Stats"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $json.stats_id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "total_answered|number",
+              "numberValue": "={{ $json.total_answered }}"
+            },
+            {
+              "key": "total_correct|number",
+              "numberValue": "={{ $json.total_correct }}"
+            },
+            {
+              "key": "current_streak|number",
+              "numberValue": "={{ $json.current_streak }}"
+            },
+            {
+              "key": "accuracy_percent|number",
+              "numberValue": "={{ $json.accuracy_percent }}"
+            },
+            {
+              "key": "last_activity|date",
+              "date": "={{ $json.last_activity }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        528,
+        112
+      ],
+      "id": "66a46986-b530-480d-ae7a-9bbdbc7f94f0",
+      "name": "Update Stats",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Daten aus SM2 + History holen und als $json weitergeben\nconst d = $('SM2 + History').first().json;\nreturn [{ json: d }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        112
+      ],
+      "id": "25adb04c-9d84-4c98-9c83-2320bb8d950a",
+      "name": "Prepare History Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.history_exists }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        112
+      ],
+      "id": "88875d4e-329b-42fb-99fc-3c6d2c60ecf6",
+      "name": "History existiert?"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $json.history_id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Name|title",
+              "title": "={{ $json.question_text }}"
+            },
+            {
+              "key": "ease_factor|number",
+              "numberValue": "={{ $json.ease_factor }}"
+            },
+            {
+              "key": "interval|number",
+              "numberValue": "={{ $json.interval }}"
+            },
+            {
+              "key": "repetitions|number",
+              "numberValue": "={{ $json.repetitions }}"
+            },
+            {
+              "key": "times_correct|number",
+              "numberValue": "={{ $json.times_correct }}"
+            },
+            {
+              "key": "times_incorrect|number",
+              "numberValue": "={{ $json.times_incorrect }}"
+            },
+            {
+              "key": "subject|rich_text",
+              "textContent": "={{ $json.subject }}"
+            },
+            {
+              "key": "is_correct|checkbox",
+              "checkboxValue": "={{ $json.is_correct }}"
+            },
+            {
+              "key": "next_due|date",
+              "date": "={{ $json.next_due }}"
+            },
+            {
+              "key": "last_answered|date",
+              "date": "={{ $json.answered_at }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "00ad4b15-482a-4568-9745-225f6e137143",
+      "name": "Update History",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "DATABASE_ID_QUESTION_HISTORY",
+          "mode": "list",
+          "cachedResultName": "Question_History",
+          "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Name|title",
+              "title": "={{ $json.question_text }}"
+            },
+            {
+              "key": "page_id|rich_text",
+              "textContent": "={{ $json.page_id }}"
+            },
+            {
+              "key": "question_id|rich_text",
+              "textContent": "={{ $json.question_id }}"
+            },
+            {
+              "key": "ease_factor|number",
+              "numberValue": "={{ $json.ease_factor }}"
+            },
+            {
+              "key": "interval|number",
+              "numberValue": "={{ $json.interval }}"
+            },
+            {
+              "key": "repetitions|number",
+              "numberValue": "={{ $json.repetitions }}"
+            },
+            {
+              "key": "times_correct|number",
+              "numberValue": "={{ $json.times_correct }}"
+            },
+            {
+              "key": "times_incorrect|number",
+              "numberValue": "={{ $json.times_incorrect }}"
+            },
+            {
+              "key": "subject|rich_text",
+              "textContent": "={{ $json.subject }}"
+            },
+            {
+              "key": "is_correct|checkbox",
+              "checkboxValue": "={{ $json.is_correct }}"
+            },
+            {
+              "key": "next_due|date",
+              "date": "={{ $json.next_due }}"
+            },
+            {
+              "key": "last_answered|date",
+              "date": "={{ $json.answered_at }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        208
+      ],
+      "id": "032ed750-ad20-44a4-804f-f8e70d2fcc48",
+      "name": "Create History",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Active_Questions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active_Questions": {
+      "main": [
+        [
+          {
+            "node": "Match Frage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Frage": {
+      "main": [
+        [
+          {
+            "node": "Frage gefunden?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frage gefunden?": {
+      "main": [
+        [
+          {
+            "node": "GPT Bewertung",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT Bewertung": {
+      "main": [
+        [
+          {
+            "node": "Get Question History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Question History": {
+      "main": [
+        [
+          {
+            "node": "SM2 + History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SM2 + History": {
+      "main": [
+        [
+          {
+            "node": "Send Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Feedback": {
+      "main": [
+        [
+          {
+            "node": "Prepare History Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare History Data": {
+      "main": [
+        [
+          {
+            "node": "History existiert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "History existiert?": {
+      "main": [
+        [
+          {
+            "node": "Update History",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update History": {
+      "main": [
+        [
+          {
+            "node": "Get User Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create History": {
+      "main": [
+        [
+          {
+            "node": "Get User Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User Stats": {
+      "main": [
+        [
+          {
+            "node": "Berechne Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Berechne Stats": {
+      "main": [
+        [
+          {
+            "node": "Update Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "YOUR_VERSION_ID",
+  "meta": {
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "id": "YOUR_WORKFLOW_ID",
+  "tags": []
+}

@@ -1,0 +1,462 @@
+{
+  "name": "Final Learn Create",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1696,
+        1392
+      ],
+      "id": "4a69dcec-6be3-44c2-92ce-a23bce8d671c",
+      "name": "Schedule Trigger2"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "DATABASE_ID_LERNMATERIAL",
+          "mode": "list",
+          "cachedResultName": "Lernmaterial:",
+          "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
+        },
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Aktiv|checkbox",
+              "condition": "equals",
+              "checkboxValue": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -1488,
+        1392
+      ],
+      "id": "fd10194c-7e0c-4f6e-8d03-89cf7022b4b5",
+      "name": "Get Lernmaterial2",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "DATABASE_ID_QUESTION_HISTORY",
+          "mode": "list",
+          "cachedResultName": "Question_History",
+          "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -1280,
+        1232
+      ],
+      "id": "dbd543bb-31c0-48d3-a3f7-247d30210cbb",
+      "name": "Get Question History2",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "DATABASE_ID_ACTIVE_QUESTIONS",
+          "mode": "list",
+          "cachedResultName": "Active_Questions",
+          "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -1280,
+        1536
+      ],
+      "id": "00a332ca-39b5-4336-934f-1ce7cecf3490",
+      "name": "Get Active Questions (Existing)",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "output": "empty"
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1024,
+        1392
+      ],
+      "id": "0db673ba-06cd-4599-8878-50f343888e7f",
+      "name": "Warte auf beide"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// SR SELECTOR v8 — FIXED\n// - Korrekte n8n Date-Parsing (property_next_due ist ein Notion Date)\n// - Case-insensitive Properties\n// - Alle aktiven Pages werden genommen, auch wenn History fehlt\n// - SR-fällige haben Vorrang, REST WIRD AUFGEFÜLLT\n// - Debug-Output\n// ============================================================\n\nconst MAX_PAGES = 10;\nconst QUESTIONS_PER_PAGE = 3;\nconst DIFFICULTY_LEVELS = ['Leicht', 'Mittel', 'Schwer', 'Experte'];\n\n// Helper: Property finden (case-insensitive, mit/ohne property_ prefix)\nfunction gp(json, ...names) {\n  for (const name of names) {\n    if (json[name] != null && json[name] !== '') return json[name];\n    const pn = 'property_' + name;\n    if (json[pn] != null && json[pn] !== '') return json[pn];\n    const low = name.toLowerCase();\n    for (const k of Object.keys(json)) {\n      const kl = k.toLowerCase();\n      if ((kl === low || kl === 'property_' + low) && json[k] != null && json[k] !== '') return json[k];\n    }\n  }\n  return '';\n}\n\n// Helper: n8n Notion Date-Feld parsen\n// n8n gibt Dates als String \"start:2026-03-05T19:00:00.000-05:00\\nend:null\\ntime_zone:null\"\n// ODER direkt als ISO-String je nach n8n Version\nfunction parseNotionDate(val) {\n  if (!val) return null;\n  const s = String(val);\n  // Format: \"start:2026-03-05T...\"\n  const startMatch = s.match(/start:([^\\n]+)/);\n  if (startMatch && startMatch[1] !== 'null') {\n    const d = new Date(startMatch[1].trim());\n    if (!isNaN(d.getTime())) return d;\n  }\n  // Direkter ISO-String\n  const d = new Date(s);\n  if (!isNaN(d.getTime())) return d;\n  return null;\n}\n\nconst lernItems = $('Get Lernmaterial2').all();\nif (lernItems.length === 0) throw new Error('Keine aktiven Lernmaterial-Items!');\n\n// --- History Map ---\nconst historyItems = $('Get Question History2').all();\nconst historyMap = {};\nhistoryItems.forEach(h => {\n  const j = h.json;\n  const refId = gp(j, 'page_id');\n  if (!refId) return;\n  const reps = parseInt(gp(j, 'repetitions')) || 0;\n  if (historyMap[refId] && historyMap[refId].repetitions > reps) return;\n\n  // next_due parsen\n  const nextDueRaw = gp(j, 'next_due');\n  const nextDueParsed = parseNotionDate(nextDueRaw);\n\n  historyMap[refId] = {\n    ease_factor: parseFloat(gp(j, 'ease_factor')) || 2.5,\n    interval: parseInt(gp(j, 'interval')) || 0,\n    repetitions: reps,\n    times_correct: parseInt(gp(j, 'times_correct')) || 0,\n    times_incorrect: parseInt(gp(j, 'times_incorrect')) || 0,\n    consecutive_correct: parseInt(gp(j, 'consecutive_correct')) || 0,\n    consecutive_incorrect: parseInt(gp(j, 'consecutive_incorrect')) || 0,\n    next_due: nextDueParsed,\n    history_page_id: j.id || ''\n  };\n});\n\n// --- Existing Questions ---\nconst existingQuestions = $('Get Active Questions (Existing)').all();\nconst existingTexts = [];\nexistingQuestions.forEach(q => {\n  const name = (q.json.name || gp(q.json, 'Name') || '').toLowerCase().trim();\n  if (name) existingTexts.push(name);\n});\n\nconst now = new Date();\n\n// --- Enrich all active Lernmaterial ---\nconst enriched = lernItems.map(item => {\n  const j = item.json;\n  const pid = j.id;\n  const hist = historyMap[pid] || null;\n  const hasHistory = hist !== null;\n\n  const content = j.name || gp(j, 'Name') || '';\n  const subject = gp(j, 'Subject', 'subject', 'Thema', 'thema', 'Fach', 'fach') || 'Allgemein';\n  let difficulty = gp(j, 'Schwierigkeitsgrad', 'schwierigkeitsgrad', 'difficulty', 'Difficulty');\n  if (!difficulty || typeof difficulty === 'number') difficulty = 'Leicht';\n\n  // SR Werte\n  const ef = hasHistory ? hist.ease_factor : 2.5;\n  const interval = hasHistory ? hist.interval : 0;\n  const reps = hasHistory ? hist.repetitions : 0;\n  const tc = hasHistory ? hist.times_correct : 0;\n  const ti = hasHistory ? hist.times_incorrect : 0;\n  const cc = hasHistory ? hist.consecutive_correct : 0;\n  const ci = hasHistory ? hist.consecutive_incorrect : 0;\n  const hpid = hasHistory ? hist.history_page_id : '';\n  const nextDue = hasHistory && hist.next_due ? hist.next_due : null;\n\n  // Adaptive Schwierigkeit\n  let idx = DIFFICULTY_LEVELS.indexOf(difficulty);\n  if (idx === -1) idx = 0;\n  let changed = false, reason = '';\n  const tot = tc + ti;\n  const acc = tot > 0 ? tc / tot : 0.5;\n\n  if (cc >= 3 && idx < 3) {\n    difficulty = DIFFICULTY_LEVELS[idx+1]; changed = true; reason = '3x richtig -> ' + difficulty;\n  } else if (tot >= 5 && acc > 0.8 && idx < 3) {\n    difficulty = DIFFICULTY_LEVELS[idx+1]; changed = true;\n  } else if (ci >= 2 && idx > 0) {\n    difficulty = DIFFICULTY_LEVELS[idx-1]; changed = true; reason = '2x falsch -> ' + difficulty;\n  } else if (tot >= 5 && acc < 0.4 && idx > 0) {\n    difficulty = DIFFICULTY_LEVELS[idx-1]; changed = true;\n  }\n\n  // Priority-Logik:\n  // - Keine History ODER interval=0 → NEUES Thema → priority 500\n  // - History mit interval>0 UND next_due <= jetzt → SR FÄLLIG → priority 2000+\n  // - History mit interval>0 UND next_due > jetzt → NICHT FÄLLIG → priority -1\n  let priority;\n  let isNew = !hasHistory || interval === 0;\n  let isOverdue = false;\n\n  if (isNew) {\n    priority = 500;\n  } else if (nextDue && nextDue <= now) {\n    priority = 2000 + Math.max(0, (now - nextDue) / 86400000);\n    isOverdue = true;\n  } else {\n    priority = -1; // Nicht fällig\n  }\n\n  return {\n    page_id: pid, content, subject, difficulty,\n    ease_factor: ef, interval, repetitions: reps,\n    times_correct: tc, times_incorrect: ti,\n    consecutive_correct: cc, consecutive_incorrect: ci,\n    next_due: nextDue ? nextDue.toISOString() : null,\n    history_page_id: hpid,\n    is_new: isNew, is_overdue: isOverdue, priority,\n    accuracy_percent: Math.round(acc * 100),\n    difficulty_changed: changed, difficulty_reason: reason\n  };\n});\n\n// --- Sortieren & Auswählen ---\n// ALLE aktiven Themen sollen Fragen bekommen!\n// Reihenfolge: 1. SR-fällige (höchste Prio), 2. Neue, 3. Nicht-fällige (auffüllen)\nenriched.sort((a, b) => b.priority - a.priority);\n\nconst srDue = enriched.filter(i => i.is_overdue);\nconst newItems = enriched.filter(i => i.is_new);\nconst notDue = enriched.filter(i => !i.is_overdue && !i.is_new)\n  .sort((a, b) => {\n    // Sortiere nicht-fällige nach nächstem Fälligkeitsdatum (bald fällige zuerst)\n    const da = a.next_due ? new Date(a.next_due).getTime() : Infinity;\n    const db = b.next_due ? new Date(b.next_due).getTime() : Infinity;\n    return da - db;\n  });\n\nlet selected = [];\n// 1. SR-fällige zuerst (max 10)\nselected.push(...srDue.slice(0, MAX_PAGES));\n// 2. Neue Pages auffüllen\nlet rem = MAX_PAGES - selected.length;\nif (rem > 0) selected.push(...newItems.slice(0, rem));\n// 3. REST MIT NICHT-FÄLLIGEN AUFFÜLLEN — als NEUE FRAGEN (höhere Schwierigkeit!)\nrem = MAX_PAGES - selected.length;\nif (rem > 0) {\n  // Markiere als \"neue Fragen\" damit OpenAI neue/schwierigere Fragen generiert\n  const notDueAsNew = notDue.slice(0, rem).map(p => ({\n    ...p,\n    is_new: true,        // neue Fragen generieren, nicht wiederholen\n    is_overdue: false     // ist KEINE SR-Wiederholung\n  }));\n  selected.push(...notDueAsNew);\n}\n\nif (selected.length === 0) throw new Error('Kein Lernmaterial!');\n\nreturn [{\n  json: {\n    selected_pages: selected,\n    existing_question_texts: existingTexts,\n    total_pages: selected.length,\n    questions_per_page: QUESTIONS_PER_PAGE,\n    total_questions_expected: selected.length * QUESTIONS_PER_PAGE,\n    _debug: {\n      lernmaterial_total: lernItems.length,\n      history_entries: historyItems.length,\n      sr_due_count: srDue.length,\n      new_count: newItems.length,\n      not_due_count: notDue.length,\n      not_due_also_selected: notDue.slice(0, MAX_PAGES).map(s => s.subject),\n      selected_subjects: selected.map(s => s.subject + (s.is_overdue ? ' [SR]' : s.is_new ? ' [NEU]' : '')),\n      all_subjects: enriched.map(s => s.subject + ': prio=' + s.priority)\n    }\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        1392
+      ],
+      "id": "8ee12cbc-c635-4752-b7cc-c2f5ceeb1cc1",
+      "name": "SR Selector + Adaptive"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Du bist ein Quiz-Generator. Du generierst EXAKT die angeforderte Anzahl Fragen.\nAusgabe: NUR reines JSON-Array. KEIN Markdown, KEIN Text davor/danach.\nWenn du weniger als 3 verschiedene Aspekte zu einem Thema findest, stelle trotzdem 3 Fragen mit leicht unterschiedlichen Formulierungen.\n"
+            },
+            {
+              "content": "=AUFGABE: Generiere ein JSON-Array mit EXAKT {{ $json.total_questions_expected }} Quizfragen.\n\nEs gibt {{ $json.total_pages }} Themen. Für JEDES Thema GENAU {{ $json.questions_per_page }} Fragen.\n\n{{ $json.selected_pages.map((p, i) => '=== THEMA ' + (i+1) + '/' + $json.total_pages + ' ===\\npage_id: ' + p.page_id + '\\nSubject: ' + p.subject + '\\nSchwierigkeit: ' + p.difficulty + '\\nWiederholungen: ' + p.repetitions + ', Genauigkeit: ' + p.accuracy_percent + '%\\nInhalt: ' + p.content.substring(0, 600) + '\\n').join('\\n') }}\n\n{{ $json.existing_question_texts.length > 0 ? '--- BEREITS EXISTIERENDE FRAGEN (NICHT WIEDERHOLEN!) ---\\n' + $json.existing_question_texts.slice(0, 30).join('\\n') + '\\n--- ENDE ---' : '' }}\n\nFormat — NUR dieses JSON-Array:\n[{\"page_id\":\"...\",\"subject\":\"...\",\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct_answer\":\"A\",\"explanation\":\"2-3 Sätze Erklärung.\"}]\n\nSchwierigkeit: Leicht=Definitionen, Mittel=Anwendung, Schwer=Szenarien, Experte=Grenzfälle\n\nWICHTIG:\n- Pro Thema EXAKT {{ $json.questions_per_page }} Fragen\n- Insgesamt EXAKT {{ $json.total_questions_expected }} Fragen\n- KEINE Duplikate\n- NUR Infos aus dem Lernmaterial\n- NUR JSON-Array\n"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        -448,
+        1392
+      ],
+      "id": "ff273c87-4fd6-4b10-80f0-a05250897e93",
+      "name": "OpenAI Fragen generieren",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.output?.[0]?.content?.[0]?.text || '';\nraw = raw.replace(/```json\\s*/gi, '').replace(/```\\s*/g, '').trim();\nlet questions = [];\ntry { questions = JSON.parse(raw); }\ncatch(e) { throw new Error('JSON Parse: ' + e.message + ' | Raw: ' + raw.substring(0, 500)); }\nif (!Array.isArray(questions)) throw new Error('Kein Array.');\n\nconst sel = $('SR Selector + Adaptive').first().json;\nconst pageMap = {};\nsel.selected_pages.forEach(p => { pageMap[p.page_id] = p; });\nconst existingTexts = new Set((sel.existing_question_texts || []).map(t => t.toLowerCase().trim()));\nconst seen = new Set();\nconst counter = {};\n\nfunction uuid() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {\n    const r = Math.random() * 16 | 0;\n    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);\n  });\n}\n\nconst results = [];\nfor (const q of questions) {\n  const ql = (q.question || '').toLowerCase().trim();\n  if (!ql) continue;\n  let dup = existingTexts.has(ql) || seen.has(ql);\n  if (!dup) { const p = ql.substring(0,50); for (const e of existingTexts) { if (e.substring(0,50)===p) { dup=true; break; } } }\n  if (dup) continue;\n  seen.add(ql); existingTexts.add(ql);\n  const pid = q.page_id || '';\n  if (!counter[pid]) counter[pid] = 0;\n  if (counter[pid] >= 3) continue;\n  counter[pid]++;\n  const pg = pageMap[pid] || {};\n  results.push({ json: {\n    question: q.question, options: q.options, correct_answer: q.correct_answer,\n    explanation: q.explanation || '', question_id: uuid(), question_number: counter[pid],\n    page_id: pid, subject: q.subject || pg.subject || '', difficulty: pg.difficulty || 'Leicht',\n    ease_factor: pg.ease_factor || 2.5, interval: pg.interval || 0,\n    repetitions: pg.repetitions || 0, times_correct: pg.times_correct || 0,\n    times_incorrect: pg.times_incorrect || 0,\n    consecutive_correct: pg.consecutive_correct || 0, consecutive_incorrect: pg.consecutive_incorrect || 0,\n    history_page_id: pg.history_page_id || '',\n    is_new: pg.is_new !== false, is_overdue: pg.is_overdue || false,\n    accuracy_percent: pg.accuracy_percent || 50,\n    difficulty_changed: pg.difficulty_changed || false, difficulty_reason: pg.difficulty_reason || ''\n  }});\n}\nif (results.length === 0) throw new Error('Keine Fragen!');\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        1392
+      ],
+      "id": "a864a914-36ba-4a36-8fe3-7cec56272ddf",
+      "name": "Parse Alle Fragen"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🧠 *Lern-Quiz* {{ $json.is_new ? '🆕 Neu' : '🔄 Wiederholung' }}\n📚 Thema: *{{ $json.subject }}*\n🎯 Schwierigkeit: {{ $json.difficulty }}{{ $json.difficulty_changed ? ' ⬆️' : '' }}\n📊 Genauigkeit: {{ $json.accuracy_percent }}%\n\n*{{ $json.subject }} — Frage {{ $json.question_number }}*\n\n{{ $json.question }}\n\n1️⃣ {{ $json.options[0] }}\n2️⃣ {{ $json.options[1] }}\n3️⃣ {{ $json.options[2] }}\n4️⃣ {{ $json.options[3] }}\n\n💬 Antworte mit der Zahl (1-4) als Antwort auf diese Nachricht",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        160,
+        1392
+      ],
+      "id": "f87bcd37-5251-49b2-af27-a27899726124",
+      "name": "Send Telegram",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const allQ = $('Parse Alle Fragen').all();\nreturn items.map((tg, idx) => {\n  const t = tg.json;\n  const mid = (t.message_id || t.result?.message_id || t.messageId || '').toString();\n  const sentAt = t.date ? new Date(t.date * 1000).toISOString() : new Date().toISOString();\n  const q = allQ[idx]?.json || {};\n  return { json: {\n    question: q.question||'', question_id: q.question_id||'',\n    options: Array.isArray(q.options) ? q.options.join(' | ') : (q.options||''),\n    correct_answer: q.correct_answer||'', explanation: q.explanation||'',\n    subject: q.subject||'', difficulty: q.difficulty||'',\n    telegram_message_id: mid, sent_at: sentAt,\n    ease_factor: parseFloat(q.ease_factor)||2.5, interval: parseInt(q.interval)||0,\n    repetitions: parseInt(q.repetitions)||0, times_correct: parseInt(q.times_correct)||0,\n    times_incorrect: parseInt(q.times_incorrect)||0,\n    consecutive_correct: parseInt(q.consecutive_correct)||0,\n    consecutive_incorrect: parseInt(q.consecutive_incorrect)||0,\n    history_page_id: q.history_page_id||'', page_id: q.page_id||''\n  }};\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        1392
+      ],
+      "id": "196371b5-b63c-4c30-a6b5-c82d9e276075",
+      "name": "Baue Notion Payload"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "DATABASE_ID_ACTIVE_QUESTIONS",
+          "mode": "list",
+          "cachedResultName": "Active_Questions",
+          "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
+        },
+        "simple": false,
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Name|title",
+              "title": "={{$json[\"question\"]}}"
+            },
+            {
+              "key": "question_id|rich_text",
+              "textContent": "={{$json[\"question_id\"]}}"
+            },
+            {
+              "key": "options|rich_text",
+              "textContent": "={{$json[\"options\"]}}"
+            },
+            {
+              "key": "correct_answer|rich_text",
+              "textContent": "={{$json[\"correct_answer\"]}}"
+            },
+            {
+              "key": "explanation|rich_text",
+              "textContent": "={{$json[\"explanation\"]}}"
+            },
+            {
+              "key": "subject|rich_text",
+              "textContent": "={{$json[\"subject\"]}}"
+            },
+            {
+              "key": "difficulty|rich_text",
+              "textContent": "={{$json[\"difficulty\"]}}"
+            },
+            {
+              "key": "telegram_message_id|rich_text",
+              "textContent": "={{$json[\"telegram_message_id\"]}}"
+            },
+            {
+              "key": "ease_factor|number",
+              "numberValue": "={{$json[\"ease_factor\"]}}"
+            },
+            {
+              "key": "interval|number",
+              "numberValue": "={{$json[\"interval\"]}}"
+            },
+            {
+              "key": "repetitions|number",
+              "numberValue": "={{$json[\"repetitions\"]}}"
+            },
+            {
+              "key": "times_correct|number",
+              "numberValue": "={{$json[\"times_correct\"]}}"
+            },
+            {
+              "key": "times_incorrect|number",
+              "numberValue": "={{$json[\"times_incorrect\"]}}"
+            },
+            {
+              "key": "consecutive_correct|number",
+              "numberValue": "={{$json[\"consecutive_correct\"]}}"
+            },
+            {
+              "key": "consecutive_incorrect|number",
+              "numberValue": "={{$json[\"consecutive_incorrect\"]}}"
+            },
+            {
+              "key": "history_page_id|rich_text",
+              "textContent": "={{$json[\"history_page_id\"]}}"
+            },
+            {
+              "key": "page_id|rich_text",
+              "textContent": "={{$json[\"page_id\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        768,
+        1392
+      ],
+      "id": "384bcbbd-f999-4cac-8f7e-52b4c17b7773",
+      "name": "Create Active_Question in Notion",
+      "credentials": {
+        "notionApi": {
+          "id": "YOUR_NOTION_CREDENTIAL_ID",
+          "name": "Notion account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger2": {
+      "main": [
+        [
+          {
+            "node": "Get Lernmaterial2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Lernmaterial2": {
+      "main": [
+        [
+          {
+            "node": "Get Question History2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Active Questions (Existing)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Question History2": {
+      "main": [
+        [
+          {
+            "node": "Warte auf beide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Questions (Existing)": {
+      "main": [
+        [
+          {
+            "node": "Warte auf beide",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Warte auf beide": {
+      "main": [
+        [
+          {
+            "node": "SR Selector + Adaptive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SR Selector + Adaptive": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Fragen generieren",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Fragen generieren": {
+      "main": [
+        [
+          {
+            "node": "Parse Alle Fragen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Alle Fragen": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram": {
+      "main": [
+        [
+          {
+            "node": "Baue Notion Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baue Notion Payload": {
+      "main": [
+        [
+          {
+            "node": "Create Active_Question in Notion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "YOUR_VERSION_ID",
+  "meta": {
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "id": "YOUR_WORKFLOW_ID",
+  "tags": []
+}
