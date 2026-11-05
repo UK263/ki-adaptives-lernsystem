@@ -69,6 +69,7 @@
           "cachedResultName": "Question_History",
           "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
         },
+        "returnAll": true,
         "options": {}
       },
       "type": "n8n-nodes-base.notion",

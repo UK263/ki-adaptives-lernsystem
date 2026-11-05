@@ -35,6 +35,7 @@
           "cachedResultName": "Active_Questions",
           "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
         },
+        "returnAll": true,
         "options": {}
       },
       "type": "n8n-nodes-base.notion",
@@ -235,6 +236,7 @@
           "cachedResultName": "User_Stats",
           "cachedResultUrl": "https://www.notion.so/YOUR_DATABASE_URL"
         },
+        "returnAll": true,
         "options": {}
       },
       "type": "n8n-nodes-base.notion",
