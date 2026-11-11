@@ -6,6 +6,9 @@ zur individuell angepassten Wiederholungsplanung.
 
 > Privates Lernprojekt | n8n (self-hosted), Notion, OpenAI GPT-4o-mini, Telegram
 
+Ausgelegt für einen Nutzer: Fragen und Feedback gehen an einen Telegram-Chat,
+die Statistik aktualisiert den ersten Eintrag in User_Stats.
+
 ## 📌 Motivation
 
 Beim Lernen für Prüfungen (IHK, Abitur, Studium) reicht reines Lesen von
@@ -13,8 +16,7 @@ Unterlagen oft nicht aus – aktives Abfragen zum richtigen Zeitpunkt verbessert
 die Merkfähigkeit deutlich (Spaced Repetition). Ziel war ein System, das:
 
 - eigenes Lernmaterial automatisch in Quizfragen umwandelt
-- Fragen zum optimalen Zeitpunkt erneut stellt (nicht zu früh, nicht zu spät)
-- sich an die individuelle Fehlerquote anpasst (schwierigere Themen häufiger)
+- fällige Themen zuerst auswählt, das Intervall dazu liegt pro Thema
 - ganz ohne zusätzliche App nutzbar ist – direkt über Telegram
 
 ## 🏗️ Architektur
@@ -27,23 +29,22 @@ Zwei n8n-Workflows, verbunden über eine gemeinsame Notion-Datenbankstruktur:
 
 ```
 Schedule Trigger → Lernmaterial + Verlauf aus Notion laden
-→ SM-2-Auswahl (fällige Wiederholungen + adaptive Auffüllung)
-→ GPT-4o-mini generiert Quizfragen (Duplikatsprüfung inklusive)
+→ SM-2-Auswahl (fällige Themen zuerst, danach neue, Rest auffüllen)
+→ GPT-4o-mini generiert Quizfragen
 → Versand per Telegram → Speicherung in Notion
 ```
 
-Duplikate werden dabei zuverlässig ausgeschlossen – auch bei leicht
-unterschiedlicher Formulierung:
+Doppelte Fragen filtert der Workflow nur grob. Im Prompt stehen bis zu 30
+vorhandene Fragetexte mit dem Hinweis, sie nicht zu wiederholen. Danach wirft
+`Parse Alle Fragen` Treffer raus, deren Text schon als Titel in Active_Questions
+steht oder in diesem Lauf schon übernommen wurde (Vergleich kleingeschrieben
+und getrimmt). Dasselbe gilt, wenn die ersten 50 Zeichen mit so einem Text
+übereinstimmen. Eine andere Formulierung bleibt drin.
 
 ```javascript
-let dup = existingTexts.has(questionLower) || seen.has(questionLower);
-if (!dup) {
-  const prefix = questionLower.substring(0, 50);
-  for (const existing of existingTexts) {
-    if (existing.substring(0, 50) === prefix) { dup = true; break; }
-  }
-}
-if (dup) continue; // Frage überspringen, nicht erneut stellen
+  let dup = existingTexts.has(ql) || seen.has(ql);
+  if (!dup) { const p = ql.substring(0,50); for (const e of existingTexts) { if (e.substring(0,50)===p) { dup=true; break; } } }
+  if (dup) continue;
 ```
 
 **2. Learn Answer** *(Telegram-getriggert)*
@@ -51,7 +52,7 @@ if (dup) continue; // Frage überspringen, nicht erneut stellen
 ```
 Telegram Reply → Zuordnung zur offenen Frage
 → GPT-4o-mini bewertet die Antwort inhaltlich
-→ SM-2-Neuberechnung (Ease-Factor, Intervall, nächstes Fälligkeitsdatum)
+→ SM-2 für das Thema (Ease-Factor, Intervall, nächstes Fälligkeitsdatum an der page_id)
 → Statistik-Update (Trefferquote, Streak)
 → Feedback mit Erklärung per Telegram
 ```
@@ -60,19 +61,44 @@ Telegram Reply → Zuordnung zur offenen Frage
 
 ## 🤖 Warum SM-2 (SuperMemo-2)?
 
-Statt Fragen zufällig oder immer gleich oft zu wiederholen, berechnet SM-2 nach
-jeder Antwort ein individuelles Wiederholungsintervall:
+Die SM-2-Werte stehen pro Thema in Question_History, nicht pro Frage. Learn Answer
+nimmt die erste Zeile mit der page_id des Lernmaterials und schreibt dort
+Ease-Factor, Intervall, Wiederholungen, times_correct und times_incorrect.
 
-- Richtig beantwortet → Intervall wächst (Ease-Factor-abhängig)
-- Falsch beantwortet → Intervall wird zurückgesetzt, Frage kommt bald wieder
-- Ease-Factor passt sich graduell an die tatsächliche Schwierigkeit für den
-  Nutzer an (nicht an eine pauschale Kategorie)
+- Richtig: Intervall wird 1, bei der zweiten richtigen Antwort 6, danach auf ganze Tage gerundet mal Ease-Factor
+- Falsch: Wiederholungen und Intervall werden 0. next_due liegt trotzdem mindestens einen Tag später. Der Selector behandelt Intervall 0 wie ein neues Thema, nicht als fällige Wiederholung
+- Der Ease-Factor wird mit der quality-Bewertung (0 bis 5) nachgezogen und bleibt mindestens 1,3
 
-So werden Themen, die gut sitzen, seltener abgefragt – Wackelkandidaten häufiger.
+Welche Themen der nächste Lauf nimmt, steht bei der Fragenauswahl: fällige zuerst,
+freie Plätze werden aufgefüllt.
 
 ## 💻 SM-2-Berechnung (Auszug)
 
 ```javascript
+// 3. History per page_id suchen
+let historyId = '';
+let h = null;
+try {
+  const historyItems = $('Get Question History').all();
+  for (const item of historyItems) {
+    const pid = (item.json.property_page_id || item.json.page_id || '').toString().trim();
+    if (pid && pid === match.page_id) {
+      historyId = item.json.id;
+      h = item.json;
+      break;
+    }
+  }
+} catch(e) {
+  // History nicht geladen? Kein Problem, erstellen wir neu
+}
+
+// 4. SM-2 Berechnung
+let ef = h ? (parseFloat(gp(h, 'ease_factor')) || 2.5) : 2.5;
+let interval = h ? (parseInt(gp(h, 'interval')) || 0) : 0;
+let reps = h ? (parseInt(gp(h, 'repetitions')) || 0) : 0;
+let tc = h ? (parseInt(gp(h, 'times_correct')) || 0) : 0;
+let ti = h ? (parseInt(gp(h, 'times_incorrect')) || 0) : 0;
+
 if (isCorrect) {
   tc++; reps++;
   if (reps === 1) interval = 1;
@@ -87,27 +113,32 @@ if (ef < 1.3) ef = 1.3;
 ef = Math.round(ef * 100) / 100;
 ```
 
+Der Helfer `gp` steht im Workflow zwischen den beiden Blöcken und ist hier weggelassen.
+
 *Vollständige Logik in [`workflows/Learn_Answer.json`](workflows/Learn_Answer.json)*
 
 ## 🧩 Adaptive Fragenauswahl
 
 Die "SR Selector + Adaptive"-Logik in **Learn Create** entscheidet bei jedem Lauf:
 
-- Welche Themen sind laut SM-2 fällig?
-- Wie viele neue Themen sollen ergänzt werden, falls noch Kapazität frei ist?
-- Welche Schwierigkeitsstufe passt aktuell zur bisherigen Trefferquote?
+- Welche Themen sind laut SM-2 fällig? Intervall größer 0 und next_due erreicht
+- Welche Themen neu sind (keine History oder Intervall 0)
+- Ob bis 10 Themen aufgefüllt wird, auch mit noch nicht fälligen. Pro Thema 3 Fragen
 
-```javascript
-// Schwierigkeit steigt automatisch nach mehreren richtigen Antworten in Folge
-if (consecutiveCorrect >= 3 && idx < 3) {
-  difficulty = DIFFICULTY_LEVELS[idx + 1];
-  changed = true;
-  reason = '3x richtig in Folge → Schwierigkeit erhöht';
-} else if (totalAnswers >= 5 && accuracy > 0.8 && idx < 3) {
-  difficulty = DIFFICULTY_LEVELS[idx + 1];
-  changed = true;
-}
-```
+Die Schwierigkeitsstufe für die Generierung kommt aus dem Lernmaterial, sonst "Leicht".
+
+## Noch offen
+
+Die Stufe nach 3 richtigen Antworten in Folge hoch und nach 2 falschen runter
+zu setzen, ist noch nicht umgesetzt. Der Selector prüft `consecutive_correct`
+ab 3 und `consecutive_incorrect` ab 2, schreibt beide Felder aber nie in die
+Question_History. Der neue Schwierigkeitsgrad wird auch nicht ins Lernmaterial
+zurückgeschrieben.
+
+Für den aktuellen Lauf kann die Stufe des Themas aus times_correct und
+times_incorrect abweichen: ab 5 Antworten eine Stufe hoch bei mehr als 80 %,
+eine Stufe runter bei weniger als 40 %. Dieser Wert steht dann auf der Frage.
+Der nächste Lauf liest die Stufe wieder aus dem Lernmaterial.
 
 ## ✅ Antwortbewertung per KI (statt stumpfem String-Vergleich)
 
