@@ -182,6 +182,158 @@ WICHTIG: Keine Duplikate · Nur Infos aus dem Lernmaterial · Nur JSON-Array
 - [`workflows/Learn_Create.json`](workflows/Learn_Create.json) → n8n-Workflow: Fragengenerierung & Versand
 - [`workflows/Learn_Answer.json`](workflows/Learn_Answer.json) → n8n-Workflow: Auswertung & SM-2-Berechnung
 
+## Setup
+
+Ich brauche n8n (self-hosted), eine Notion-Integration, einen Telegram-Bot
+und einen OpenAI-API-Key. Die OpenAI-Nodes sind auf gpt-4o-mini gestellt.
+
+### Import
+
+Die Dateien sind
+[`workflows/Learn_Create.json`](workflows/Learn_Create.json)
+(im Export: Final Learn Create) und
+[`workflows/Learn_Answer.json`](workflows/Learn_Answer.json)
+(im Export: Final Learn Answer).
+Ich importiere jede Datei in n8n über Import from File.
+
+Beide stehen auf `active: false`. Ich aktiviere sie, wenn die Nodes auf
+meine Zugänge zeigen.
+
+### Credentials
+
+In n8n lege ich drei Credentials an. So heißen sie in der JSON. Die IDs
+sind Platzhalter, deshalb wähle ich nach dem Import an jedem Node mein
+Credential aus.
+
+| Name in der JSON | Typ | Nodes |
+|---|---|---|
+| Notion account | Notion API (`notionApi`) | alle Notion-Nodes |
+| Telegram account | Telegram API (`telegramApi`) | Telegram Trigger, Send Telegram, Error Feedback, Send Feedback |
+| OpenAi account | OpenAI API (`openAiApi`) | OpenAI Fragen generieren, GPT Bewertung |
+
+Die Integration teile ich in Notion mit den vier Datenbanken. Den Token
+trage ich in Notion account ein, den Bot-Token in Telegram account, den
+OpenAI-Key in OpenAi account.
+
+`YOUR_TELEGRAM_CHAT_ID` steht in Send Telegram, Error Feedback, Send Feedback
+und im Code von Match Frage. Die Chat-ID trage ich an diesen Stellen ein.
+
+Die Datenbank-IDs sind Platzhalter. Ich wähle in diesen Nodes meine Datenbank:
+
+| Platzhalter | Datenbank | Nodes |
+|---|---|---|
+| `DATABASE_ID_LERNMATERIAL` | Lernmaterial | Get Lernmaterial2 |
+| `DATABASE_ID_ACTIVE_QUESTIONS` | Active_Questions | Get Active Questions (Existing), Create Active_Question in Notion, Get Active_Questions |
+| `DATABASE_ID_QUESTION_HISTORY` | Question_History | Get Question History2, Get Question History, Create History |
+| `DATABASE_ID_USER_STATS` | User_Stats | Get User Stats |
+
+Update History und Update Stats laufen über eine Seiten-ID.
+
+Weitere Platzhalter in den Dateien: `YOUR_WEBHOOK_ID`, `YOUR_WORKFLOW_ID`,
+`YOUR_VERSION_ID`, `YOUR_N8N_INSTANCE_ID`.
+
+### Schedule
+
+Learn Create startet am Node Schedule Trigger2. Ein Intervall ist in der
+JSON nicht gesetzt. Das stelle ich im Schedule-Node selbst ein.
+
+### Notion-Schema
+
+Die Typ-Spalte ist der Teil hinter `|` im Property-Key des Notion-Nodes.
+`title` ist der Seitentitel, `rich_text` ein Textfeld, `number` eine Zahl,
+`checkbox` ein Haken, `date` ein Datum. Fehlt so ein Key, steht in der
+Spalte: nicht angegeben.
+
+Active_Questions und Question_History starte ich leer. In Lernmaterial
+brauche ich mindestens eine Seite mit Aktiv. In User_Stats lege ich vorher
+eine Seite an, Update Stats schreibt in die erste geladene Seite.
+
+#### Lernmaterial
+
+Get Lernmaterial2 filtert mit `Aktiv|checkbox` gleich true.
+
+Den Lerntext holt der Selector aus `name` oder aus einer Property `Name`.
+Bei Active_Questions kommt der Titel (`Name|title`) als `name` zurück,
+derselbe Zugriff. Einen Key `Name|title` hat Lernmaterial nicht.
+Seitenblöcke liest der Code nicht. Die Seiten-ID (`id`) landet in den
+anderen Datenbanken als `page_id`.
+
+| Property-Name | Typ | Wofür |
+|---|---|---|
+| Aktiv | checkbox | Filter, nur angehakte Seiten |
+| Name | nicht angegeben | Lerntext über `name` oder die Property `Name` |
+| Subject, Thema oder Fach | nicht angegeben | Thema. Erster Treffer, sonst der Text Allgemein. Die Suche ist case-insensitive |
+| Schwierigkeitsgrad oder difficulty | nicht angegeben | Stufe. Erster Treffer. Leer oder eine Zahl, dann der Text Leicht. Die Suche ist case-insensitive |
+
+Subject, Thema und Fach sind alternative Namen für dieselbe Suche.
+Schwierigkeitsgrad und difficulty auch.
+
+#### Active_Questions
+
+Die Typen stehen in den Keys von Create Active_Question.
+
+| Property-Name | Typ | Wofür |
+|---|---|---|
+| Name | title | Fragetext. Der Selector vergleicht vorhandene Titel. Match Frage liest `name` |
+| question_id | rich_text | ID aus Parse Alle Fragen. Match Frage liest sie |
+| options | rich_text | Optionen, mit ` \| ` verbunden. Match Frage liest sie |
+| correct_answer | rich_text | Richtige Antwort. Match Frage liest sie |
+| explanation | rich_text | Erklärung. Match Frage liest sie |
+| subject | rich_text | Thema. Match Frage liest es |
+| difficulty | rich_text | Stufe der Frage. Match Frage liest sie |
+| telegram_message_id | rich_text | Message-ID der Quiz-Nachricht. Match Frage vergleicht sie mit der Antwort darauf |
+| page_id | rich_text | Seiten-ID aus Lernmaterial. Match Frage liest sie |
+| ease_factor | number | Beim Anlegen aus dem Selector mitgeschrieben |
+| interval | number | Beim Anlegen aus dem Selector mitgeschrieben |
+| repetitions | number | Beim Anlegen aus dem Selector mitgeschrieben |
+| times_correct | number | Beim Anlegen aus dem Selector mitgeschrieben |
+| times_incorrect | number | Beim Anlegen aus dem Selector mitgeschrieben |
+| consecutive_correct | number | Beim Anlegen aus dem Selector mitgeschrieben |
+| consecutive_incorrect | number | Beim Anlegen aus dem Selector mitgeschrieben |
+| history_page_id | rich_text | History-Seiten-ID, beim Anlegen aus dem Selector mitgeschrieben |
+
+Von ease_factor bis history_page_id schreibt Create Active_Question die
+Werte mit. Die laufenden SM-2-Werte stehen in Question_History. `sent_at`
+berechnet Baue Notion Payload. In den Property-Keys steht es nicht.
+
+#### Question_History
+
+Create History hat eine databaseId und die Property-Werte. Update History
+hat `operation: update` und eine pageId. Die Typen stehen in den Keys
+dieser beiden Nodes. `page_id` und `question_id` setzt nur Create History.
+
+| Property-Name | Typ | Wofür |
+|---|---|---|
+| Name | title | Fragetext. Create und Update schreiben ihn |
+| page_id | rich_text | Verknüpfung zur Lernmaterial-Seite. Selector und SM2 suchen darüber |
+| question_id | rich_text | Create schreibt sie |
+| ease_factor | number | Selector und SM2 lesen sie. Create und Update schreiben sie |
+| interval | number | Selector und SM2 lesen ihn. Create und Update schreiben ihn |
+| repetitions | number | Selector und SM2 lesen sie. Create und Update schreiben sie |
+| times_correct | number | Selector und SM2 lesen sie. Create und Update schreiben sie |
+| times_incorrect | number | Selector und SM2 lesen sie. Create und Update schreiben sie |
+| subject | rich_text | Thema. Create und Update schreiben es |
+| is_correct | checkbox | Letztes Ergebnis. Create und Update schreiben es |
+| next_due | date | Nächstes Datum. Create und Update schreiben es. Der Selector liest es als Notion-Datum |
+| last_answered | date | Zeitpunkt der Antwort (`answered_at`). Create und Update schreiben ihn |
+| consecutive_correct | nicht angegeben | Selector sucht den Namen und nimmt parseInt. Kein Schreib-Key in Create oder Update |
+| consecutive_incorrect | nicht angegeben | Selector sucht den Namen und nimmt parseInt. Kein Schreib-Key in Create oder Update |
+
+#### User_Stats
+
+Get User Stats lädt die Seiten. Berechne Stats nimmt die erste. Update
+Stats schreibt in deren id. Einen Titel-Key setzen diese Nodes nicht.
+Leere `total_answered`, `total_correct` und `current_streak` liest der
+Code als 0.
+
+| Property-Name | Typ | Wofür |
+|---|---|---|
+| total_answered | number | Gelesen, pro Antwort um 1 erhöht, geschrieben |
+| total_correct | number | Gelesen, bei richtiger Antwort um 1 erhöht, geschrieben |
+| current_streak | number | Gelesen, bei richtig um 1 erhöht, bei falsch auf 0 gesetzt, geschrieben |
+| accuracy_percent | number | Prozent aus total_correct und total_answered, geschrieben |
+| last_activity | date | Zeitpunkt aus Berechne Stats, geschrieben |
+
 ---
 
 *Aus Datenschutzgründen wurden Telegram-Chat-ID, Notion-Datenbank-IDs,
