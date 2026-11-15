@@ -23,6 +23,24 @@ die Merkfähigkeit deutlich (Spaced Repetition). Ziel war ein System, das:
 
 ![Architektur-Übersicht](diagrams/architektur.png)
 
+Farben der Kästen:
+
+- Lila: Notion und die beiden OpenAI-Kästen
+- Grün: Learn Create und Learn Answer (n8n)
+- Blau: Telegram
+
+Pfeile:
+
+- Grau, durchgezogen: Notion nach Learn Create, Notion nach Learn Answer
+- Grün: Learn Create nach OpenAI (Fragen generieren) und nach Telegram,
+  Learn Answer nach OpenAI (Antwort bewerten)
+- Blau, Spitze lila: Telegram nach Learn Answer
+- Grau, gestrichelt: Learn Answer zurück nach Notion
+
+Bei Question_History steht im Bild „SM-2-Werte je Frage“. `SM2 + History`
+schreibt Ease-Factor, Intervall und die Zähler an die erste Zeile mit der
+page_id des Themas.
+
 Zwei n8n-Workflows, verbunden über eine gemeinsame Notion-Datenbankstruktur:
 
 **1. Learn Create** *(zeitgesteuert)*
@@ -166,9 +184,11 @@ WICHTIG: Keine Duplikate · Nur Infos aus dem Lernmaterial · Nur JSON-Array
 
 ## 🖼️ Screenshots
 
+Beispieldarstellung, kein echter Screenshot. Die beiden Telegram-Ansichten sind nachgebaut.
+
 | | |
 |---|---|
-| ![Quiz-Frage](screenshots/quiz-frage.png) Quiz-Frage per Telegram | ![Feedback](screenshots/feedback.png) Auswertung mit Erklärung |
+| ![Quiz-Frage](screenshots/quiz-frage.png) Quiz-Frage per Telegram. Beispieldarstellung, kein echter Screenshot. | ![Feedback](screenshots/feedback.png) Auswertung mit Erklärung. Beispieldarstellung, kein echter Screenshot. |
 
 ## 🛠️ Tech Stack
 
@@ -178,7 +198,7 @@ WICHTIG: Keine Duplikate · Nur Infos aus dem Lernmaterial · Nur JSON-Array
 ## 📁 Repo-Struktur
 
 - [`diagrams/`](diagrams/) → Architektur-Übersicht
-- [`screenshots/`](screenshots/) → Bot in Aktion (Quiz & Feedback)
+- [`screenshots/`](screenshots/) → Beispieldarstellung, Quiz und Feedback
 - [`workflows/Learn_Create.json`](workflows/Learn_Create.json) → n8n-Workflow: Fragengenerierung & Versand
 - [`workflows/Learn_Answer.json`](workflows/Learn_Answer.json) → n8n-Workflow: Auswertung & SM-2-Berechnung
 
