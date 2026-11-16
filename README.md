@@ -361,3 +361,7 @@ Code als 0.
 *Aus Datenschutzgründen wurden Telegram-Chat-ID, Notion-Datenbank-IDs,
 Zugangsdaten-Referenzen und die n8n-Instanz-ID aus den Workflow-Dateien
 entfernt bzw. anonymisiert.*
+
+## Lizenz
+
+MIT. Der Text steht in [LICENSE](LICENSE).
