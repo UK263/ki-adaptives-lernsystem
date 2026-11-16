@@ -1,25 +1,27 @@
-# 🧠 KI-gestütztes Adaptives Lernsystem
+# KI-gestütztes adaptives Lernsystem
 
-Ein Telegram-Bot zur automatisierten Wissensabfrage mit KI-generierten Quizfragen,
-gekoppelt an Notion als Datenbank und einem Spaced-Repetition-Algorithmus (SM-2)
-zur individuell angepassten Wiederholungsplanung.
+Ein Telegram-Bot zur automatischen Wissensabfrage. Die Quizfragen erzeugt
+GPT-4o-mini. Notion ist die Datenbank. SM-2 plant die Wiederholung pro Thema.
 
 > Privates Lernprojekt | n8n (self-hosted), Notion, OpenAI GPT-4o-mini, Telegram
 
-Ausgelegt für einen Nutzer: Fragen und Feedback gehen an einen Telegram-Chat,
-die Statistik aktualisiert den ersten Eintrag in User_Stats.
+Ausgelegt für einen Nutzer. Fragen und Feedback gehen an einen Telegram-Chat.
+Die Statistik aktualisiert den ersten Eintrag in User_Stats.
 
-## 📌 Motivation
+Das Projekt ist mit KI-Unterstützung umgesetzt. Architektur, Review und Betrieb
+liegen bei mir.
 
-Beim Lernen für Prüfungen (IHK, Abitur, Studium) reicht reines Lesen von
-Unterlagen oft nicht aus – aktives Abfragen zum richtigen Zeitpunkt verbessert
-die Merkfähigkeit deutlich (Spaced Repetition). Ziel war ein System, das:
+## Motivation
+
+Beim Lernen für Prüfungen (IHK, Abitur, Studium) reicht reines Lesen der
+Unterlagen oft nicht. Ich wollte das Material aktiv abfragen, und zwar zum
+richtigen Zeitpunkt. Dafür ist Spaced Repetition da. Ziel war ein System, das:
 
 - eigenes Lernmaterial automatisch in Quizfragen umwandelt
-- fällige Themen zuerst auswählt, das Intervall dazu liegt pro Thema
-- ganz ohne zusätzliche App nutzbar ist – direkt über Telegram
+- fällige Themen zuerst auswählt. Das Intervall liegt pro Thema
+- ohne zusätzliche App läuft, direkt über Telegram
 
-## 🏗️ Architektur
+## Architektur
 
 ![Architektur-Übersicht](diagrams/architektur.png)
 
@@ -41,7 +43,7 @@ Bei Question_History steht im Bild „SM-2-Werte je Frage“. `SM2 + History`
 schreibt Ease-Factor, Intervall und die Zähler an die erste Zeile mit der
 page_id des Themas.
 
-Zwei n8n-Workflows, verbunden über eine gemeinsame Notion-Datenbankstruktur:
+Zwei n8n-Workflows. Beide nutzen dieselbe Notion-Datenbankstruktur.
 
 **1. Learn Create** *(zeitgesteuert)*
 
@@ -75,9 +77,9 @@ Telegram Reply → Zuordnung zur offenen Frage
 → Feedback mit Erklärung per Telegram
 ```
 
-**Notion-Datenbanken:** `Lernmaterial` · `Active_Questions` · `Question_History` · `User_Stats`
+Notion-Datenbanken: `Lernmaterial`, `Active_Questions`, `Question_History`, `User_Stats`.
 
-## 🤖 Warum SM-2 (SuperMemo-2)?
+## Warum SM-2 (SuperMemo-2)?
 
 Die SM-2-Werte stehen pro Thema in Question_History, nicht pro Frage. Learn Answer
 nimmt die erste Zeile mit der page_id des Lernmaterials und schreibt dort
@@ -90,7 +92,7 @@ Ease-Factor, Intervall, Wiederholungen, times_correct und times_incorrect.
 Welche Themen der nächste Lauf nimmt, steht bei der Fragenauswahl: fällige zuerst,
 freie Plätze werden aufgefüllt.
 
-## 💻 SM-2-Berechnung (Auszug)
+## SM-2-Berechnung (Auszug)
 
 ```javascript
 // 3. History per page_id suchen
@@ -135,7 +137,7 @@ Der Helfer `gp` steht im Workflow zwischen den beiden Blöcken und ist hier wegg
 
 *Vollständige Logik in [`workflows/Learn_Answer.json`](workflows/Learn_Answer.json)*
 
-## 🧩 Adaptive Fragenauswahl
+## Adaptive Fragenauswahl
 
 Die "SR Selector + Adaptive"-Logik in **Learn Create** entscheidet bei jedem Lauf:
 
@@ -158,14 +160,14 @@ times_incorrect abweichen: ab 5 Antworten eine Stufe hoch bei mehr als 80 %,
 eine Stufe runter bei weniger als 40 %. Dieser Wert steht dann auf der Frage.
 Der nächste Lauf liest die Stufe wieder aus dem Lernmaterial.
 
-## ✅ Antwortbewertung per KI (statt stumpfem String-Vergleich)
+## Antwortbewertung per KI
 
-Die Bewertung nutzt GPT-4o-mini als "IT-Ausbilder"-Persona, die die Antwort
-inhaltlich einordnet (`quality`-Skala 0–5, analog zum klassischen SM-2-Modell),
-statt nur exakte Übereinstimmung zu prüfen – inklusive kurzer Erklärung und
-Praxisbeispiel als Feedback.
+Die Bewertung nutzt GPT-4o-mini als "IT-Ausbilder"-Persona. Sie ordnet die
+Antwort inhaltlich ein, auf der `quality`-Skala von 0 bis 5, analog zum
+klassischen SM-2-Modell. Geprüft wird nicht nur die exakte Übereinstimmung.
+Zum Feedback gehören eine kurze Erklärung und ein Praxisbeispiel.
 
-## 💬 Prompt-Beispiel (Fragengenerierung)
+## Prompt-Beispiel (Fragengenerierung)
 
 ```
 Generiere ein JSON-Array mit EXAKT {total_questions_expected} Quizfragen.
@@ -182,7 +184,7 @@ Schwer=Szenarien, Experte=Grenzfälle
 WICHTIG: Keine Duplikate · Nur Infos aus dem Lernmaterial · Nur JSON-Array
 ```
 
-## 🖼️ Screenshots
+## Screenshots
 
 Beispieldarstellung, kein echter Screenshot. Die beiden Telegram-Ansichten sind nachgebaut.
 
@@ -190,17 +192,17 @@ Beispieldarstellung, kein echter Screenshot. Die beiden Telegram-Ansichten sind 
 |---|---|
 | ![Quiz-Frage](screenshots/quiz-frage.png) Quiz-Frage per Telegram. Beispieldarstellung, kein echter Screenshot. | ![Feedback](screenshots/feedback.png) Auswertung mit Erklärung. Beispieldarstellung, kein echter Screenshot. |
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-`n8n (self-hosted)` `Notion API` `OpenAI GPT-4o-mini` `Telegram Bot API`
-`JavaScript (Code Nodes)` `SM-2 Spaced-Repetition-Algorithmus`
+n8n (self-hosted), Notion API, OpenAI GPT-4o-mini, Telegram Bot API,
+JavaScript (Code Nodes), SM-2 Spaced-Repetition-Algorithmus.
 
-## 📁 Repo-Struktur
+## Repo-Struktur
 
-- [`diagrams/`](diagrams/) → Architektur-Übersicht
-- [`screenshots/`](screenshots/) → Beispieldarstellung, Quiz und Feedback
-- [`workflows/Learn_Create.json`](workflows/Learn_Create.json) → n8n-Workflow: Fragengenerierung & Versand
-- [`workflows/Learn_Answer.json`](workflows/Learn_Answer.json) → n8n-Workflow: Auswertung & SM-2-Berechnung
+- [`diagrams/`](diagrams/): Architektur-Übersicht
+- [`screenshots/`](screenshots/): Beispieldarstellung, Quiz und Feedback
+- [`workflows/Learn_Create.json`](workflows/Learn_Create.json): n8n-Workflow, Fragengenerierung und Versand
+- [`workflows/Learn_Answer.json`](workflows/Learn_Answer.json): n8n-Workflow, Auswertung und SM-2-Berechnung
 
 ## Setup
 
